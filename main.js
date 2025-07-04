@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CharacterController } from './CharacterController.js';
+import { CameraController } from './CameraController.js';
 
 class Game {
     constructor() {
@@ -8,14 +9,10 @@ class Game {
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.clock = new THREE.Clock();
         this.characterController = null;
+        this.cameraController = null;
         
         // Input state
         this.keys = {};
-        this.mouseX = 0;
-        this.mouseY = 0;
-        this.lastMouseX = 0;
-        this.lastMouseY = 0;
-        this.isPointerLocked = false;
         
         // Backend communication
         this.backendUrl = 'http://localhost:8000';
@@ -38,11 +35,11 @@ class Game {
         this.setupGround();
         
         // Load character using CharacterController
-        this.characterController = new CharacterController(this.scene);
-        
-        // Setup camera
-        this.camera.position.set(0, 5, -10);
-        this.camera.lookAt(0, 0, 0);
+        this.characterController = new CharacterController(this.scene, () => {
+            // Set up camera controller after character is loaded
+            this.cameraController = new CameraController(this.camera, this.renderer);
+            this.cameraController.setTarget(this.characterController.getPivot());
+        });
         
         // Setup controls
         this.setupControls();
@@ -132,23 +129,6 @@ class Game {
         document.addEventListener('keyup', (event) => {
             this.keys[event.code] = false;
         });
-
-        // Mouse controls
-        document.addEventListener('mousemove', (event) => {
-            if (this.isPointerLocked) {
-                const deltaX = event.movementX || 0;
-                this.sendMouseInput(deltaX);
-            }
-        });
-
-        // Pointer lock
-        this.renderer.domElement.addEventListener('click', () => {
-            this.renderer.domElement.requestPointerLock();
-        });
-
-        document.addEventListener('pointerlockchange', () => {
-            this.isPointerLocked = document.pointerLockElement === this.renderer.domElement;
-        });
     }
 
     async sendMovementInput(deltaX, deltaZ, deltaTime) {
@@ -174,26 +154,7 @@ class Game {
         }
     }
 
-    async sendMouseInput(deltaX) {
-        try {
-            const response = await fetch(`${this.backendUrl}/player/${this.playerId}/rotate`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    delta_x: deltaX
-                })
-            });
-            
-            if (response.ok) {
-                const playerState = await response.json();
-                this.updateCharacterFromState(playerState);
-            }
-        } catch (error) {
-            console.error('Error sending mouse input:', error);
-        }
-    }
+
 
     async sendPlayerFlags(isSprinting, isCrouching) {
         try {
@@ -231,9 +192,9 @@ class Game {
     }
 
     onWindowResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        if (this.cameraController) {
+            this.cameraController.onWindowResize();
+        }
     }
 
     animate() {
@@ -250,6 +211,11 @@ class Game {
             } else {
                 this.characterController.stopMoving();
             }
+        }
+        
+        // Update camera
+        if (this.cameraController) {
+            this.cameraController.update();
         }
         
         this.renderer.render(this.scene, this.camera);

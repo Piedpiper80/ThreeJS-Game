@@ -19,9 +19,15 @@ export class CharacterController {
             this.character = gltf.scene;
             this.character.scale.set(1, 1, 1);
             this.character.position.set(0, 0, 0);
-            this.character.rotation.y = 0;
+
+            // Create a pivot for the character
+            this.pivot = new THREE.Object3D();
+            this.pivot.add(this.character);
+            this.scene.add(this.pivot);
+
+            // Rotate the model so its back faces the camera
+            this.character.rotation.y = Math.PI;
             this.character.castShadow = true;
-            this.scene.add(this.character);
 
             this.mixer = new THREE.AnimationMixer(this.character);
             this.animations.idle = this.mixer.clipAction(gltf.animations[0]);
@@ -56,16 +62,11 @@ export class CharacterController {
     }
 
     moveForward(deltaTime) {
-        if (!this.character) return;
-        
-        // Calculate forward direction based on character's rotation
-        const direction = new THREE.Vector3(0, 0, 1);
-        direction.applyQuaternion(this.character.quaternion);
-        
-        // Move character forward
-        this.character.position.add(direction.multiplyScalar(this.speed * deltaTime));
-        
-        // Change animation to walk if not already walking
+        if (!this.pivot) return;
+        // Calculate forward direction based on pivot's rotation
+        const direction = new THREE.Vector3(0, 0, -1);
+        direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.pivot.rotation.y);
+        this.pivot.position.add(direction.multiplyScalar(this.speed * deltaTime));
         if (this.currentAnimation !== 'walk' && this.animations.walk) {
             this.setAnimation('walk');
         }
@@ -79,20 +80,16 @@ export class CharacterController {
 
     setAnimation(animationName) {
         if (!this.animations[animationName] || this.currentAnimation === animationName) return;
-        
-        // Stop current animation
         if (this.currentAnimation && this.animations[this.currentAnimation]) {
             this.animations[this.currentAnimation].stop();
         }
-        
-        // Start new animation
         this.animations[animationName].play();
         this.currentAnimation = animationName;
     }
 
     updatePosition(position) {
-        if (!this.character) return;
-        this.character.position.set(position.x, position.y, position.z);
+        if (!this.pivot) return;
+        this.pivot.position.set(position.x, position.y, position.z);
     }
 
     updateAnimation(animationName) {
@@ -101,5 +98,9 @@ export class CharacterController {
 
     getCharacter() {
         return this.character;
+    }
+
+    getPivot() {
+        return this.pivot;
     }
 } 
