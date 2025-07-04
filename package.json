@@ -1,0 +1,18 @@
+{
+  "name": "biped-character-controller",
+  "version": "1.0.0",
+  "description": "Modern character controller for biped animations",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.158.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+} 
