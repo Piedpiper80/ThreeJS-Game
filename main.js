@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { CharacterController } from './CharacterController.js';
 
 class Game {
     constructor() {
@@ -7,10 +7,7 @@ class Game {
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.clock = new THREE.Clock();
-        this.character = null;
-        this.mixer = null;
-        this.animations = {};
-        this.currentAnimation = null;
+        this.characterController = null;
         
         // Input state
         this.keys = {};
@@ -40,11 +37,11 @@ class Game {
         this.setupLighting();
         this.setupGround();
         
-        // Load character
-        this.loadCharacter();
+        // Load character using CharacterController
+        this.characterController = new CharacterController(this.scene);
         
         // Setup camera
-        this.camera.position.set(0, 5, 10);
+        this.camera.position.set(0, 5, -10);
         this.camera.lookAt(0, 0, 0);
         
         // Setup controls
@@ -124,53 +121,6 @@ class Game {
             box.receiveShadow = true;
             this.scene.add(box);
         }
-    }
-
-    loadCharacter() {
-        const loader = new GLTFLoader();
-        
-        // Load idle animation first
-        loader.load('./biped/Animation_Idle_4_withSkin.glb', (gltf) => {
-            this.character = gltf.scene;
-            this.character.scale.set(1, 1, 1);
-            this.character.position.set(0, 0, 0);
-            this.character.castShadow = true;
-            
-            // Setup animation mixer
-            this.mixer = new THREE.AnimationMixer(this.character);
-            
-            // Add idle animation
-            this.animations.idle = this.mixer.clipAction(gltf.animations[0]);
-            this.animations.idle.play();
-            this.currentAnimation = 'idle';
-            
-            this.scene.add(this.character);
-            
-            // Load additional animations
-            this.loadAnimations();
-        });
-    }
-
-    loadAnimations() {
-        const loader = new GLTFLoader();
-        const animationFiles = [
-            { name: 'walk', file: './biped/Animation_Walking_withSkin.glb' },
-            { name: 'run', file: './biped/Animation_Running_withSkin.glb' },
-            { name: 'sprint', file: './biped/Animation_Lean_Forward_Sprint_inplace_withSkin.glb' },
-            { name: 'crouch_walk', file: './biped/Animation_Cautious_Crouch_Walk_Forward_inplace_withSkin.glb' }
-        ];
-
-        let loadedCount = 0;
-        animationFiles.forEach(({ name, file }) => {
-            loader.load(file, (gltf) => {
-                this.animations[name] = this.mixer.clipAction(gltf.animations[0]);
-                loadedCount++;
-                
-                if (loadedCount === animationFiles.length) {
-                    console.log('All animations loaded!');
-                }
-            });
-        });
     }
 
     setupControls() {
@@ -268,31 +218,13 @@ class Game {
     }
 
     updateCharacterFromState(playerState) {
-        if (!this.character) return;
+        if (!this.characterController) return;
         
         // Update position
-        this.character.position.set(
-            playerState.position[0],
-            playerState.position[1],
-            playerState.position[2]
-        );
-        
-        // Update rotation
-        this.character.rotation.y = playerState.rotation;
+        this.characterController.updatePosition(playerState.position);
         
         // Update animation
-        if (playerState.animation && this.animations[playerState.animation]) {
-            if (this.currentAnimation !== playerState.animation) {
-                // Stop current animation
-                if (this.animations[this.currentAnimation]) {
-                    this.animations[this.currentAnimation].stop();
-                }
-                
-                // Play new animation
-                this.animations[playerState.animation].play();
-                this.currentAnimation = playerState.animation;
-            }
-        }
+        this.characterController.updateAnimation(playerState.animation);
         
         // Update UI
         this.updateUI(playerState);
@@ -306,61 +238,11 @@ class Game {
 
     animate() {
         requestAnimationFrame(() => this.animate());
-        
         const deltaTime = this.clock.getDelta();
-        
-        // Update animation mixer
-        if (this.mixer) {
-            this.mixer.update(deltaTime);
+        if (this.characterController) {
+            this.characterController.update(deltaTime);
         }
-        
-        // Handle input and send to backend
-        this.handleInput(deltaTime);
-        
-        // Update camera to follow character
-        if (this.character) {
-            const characterPosition = this.character.position.clone();
-            const cameraOffset = new THREE.Vector3(0, 5, 10);
-            cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.character.rotation.y);
-            this.camera.position.copy(characterPosition).add(cameraOffset);
-            this.camera.lookAt(characterPosition);
-        }
-        
         this.renderer.render(this.scene, this.camera);
-    }
-
-    handleInput(deltaTime) {
-        let deltaX = 0;
-        let deltaZ = 0;
-        
-        // WASD movement
-        if (this.keys['KeyW']) deltaZ -= 1;
-        if (this.keys['KeyS']) deltaZ += 1;
-        if (this.keys['KeyA']) deltaX -= 1;
-        if (this.keys['KeyD']) deltaX += 1;
-        
-        // Normalize diagonal movement
-        if (deltaX !== 0 && deltaZ !== 0) {
-            const length = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-            deltaX /= length;
-            deltaZ /= length;
-        }
-        
-        // Send movement to backend
-        if (deltaX !== 0 || deltaZ !== 0) {
-            this.sendMovementInput(deltaX, deltaZ, deltaTime);
-        }
-        
-        // Handle sprint and crouch
-        const isSprinting = this.keys['ShiftLeft'] || this.keys['ShiftRight'];
-        const isCrouching = this.keys['ControlLeft'] || this.keys['ControlRight'];
-        
-        // Send flags to backend (only when they change)
-        if (this.lastSprinting !== isSprinting || this.lastCrouching !== isCrouching) {
-            this.sendPlayerFlags(isSprinting, isCrouching);
-            this.lastSprinting = isSprinting;
-            this.lastCrouching = isCrouching;
-        }
     }
 
     updateUI(playerState) {
@@ -369,5 +251,6 @@ class Game {
     }
 }
 
-// Start the game
-new Game(); 
+window.onload = () => {
+    new Game();
+}; 
