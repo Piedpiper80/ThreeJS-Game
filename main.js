@@ -205,9 +205,11 @@ class Game {
         if (this.characterController) {
             this.characterController.update(deltaTime);
             
-            // Check for W key (forward movement)
+            // Check for W and S keys (forward and backward movement)
             if (this.keys['KeyW']) {
                 this.characterController.moveForward(deltaTime);
+            } else if (this.keys['KeyS']) {
+                this.characterController.moveBackward(deltaTime);
             } else {
                 this.characterController.stopMoving();
             }

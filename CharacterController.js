@@ -44,7 +44,8 @@ export class CharacterController {
             { name: 'walk', file: './biped/Animation_Walking_withSkin.glb' },
             { name: 'run', file: './biped/Animation_Running_withSkin.glb' },
             { name: 'sprint', file: './biped/Animation_Lean_Forward_Sprint_inplace_withSkin.glb' },
-            { name: 'crouch_walk', file: './biped/Animation_Cautious_Crouch_Walk_Forward_inplace_withSkin.glb' }
+            { name: 'crouch_walk', file: './biped/Animation_Cautious_Crouch_Walk_Forward_inplace_withSkin.glb' },
+            { name: 'walk_backward', file: './biped/Animation_Walking_Backward_withSkin.glb' }
         ];
         let loadedCount = 0;
         animationFiles.forEach(({ name, file }) => {
@@ -68,6 +69,20 @@ export class CharacterController {
         direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.pivot.rotation.y);
         this.pivot.position.add(direction.multiplyScalar(this.speed * deltaTime));
         if (this.currentAnimation !== 'walk' && this.animations.walk) {
+            this.setAnimation('walk');
+        }
+    }
+
+    moveBackward(deltaTime) {
+        if (!this.pivot) return;
+        // Calculate backward direction based on pivot's rotation
+        const direction = new THREE.Vector3(0, 0, 1);
+        direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.pivot.rotation.y);
+        this.pivot.position.add(direction.multiplyScalar(this.speed * deltaTime));
+        // Play backward walk animation if available, else use walk
+        if (this.currentAnimation !== 'walk_backward' && this.animations.walk_backward) {
+            this.setAnimation('walk_backward');
+        } else if (!this.animations.walk_backward && this.currentAnimation !== 'walk') {
             this.setAnimation('walk');
         }
     }
