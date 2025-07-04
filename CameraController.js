@@ -38,8 +38,8 @@ export class CameraController {
     handleMouseMove(deltaX) {
         if (!this.target) return;
         
-        // Rotate the character based on mouse movement
-        this.target.rotation.y += deltaX * this.sensitivity;
+        // Rotate the character based on mouse movement (invert sign)
+        this.target.rotation.y -= deltaX * this.sensitivity;
         
         // Update camera position to follow character
         this.updateCameraPosition();
