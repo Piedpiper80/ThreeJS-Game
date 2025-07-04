@@ -239,9 +239,19 @@ class Game {
     animate() {
         requestAnimationFrame(() => this.animate());
         const deltaTime = this.clock.getDelta();
+        
+        // Handle movement input
         if (this.characterController) {
             this.characterController.update(deltaTime);
+            
+            // Check for W key (forward movement)
+            if (this.keys['KeyW']) {
+                this.characterController.moveForward(deltaTime);
+            } else {
+                this.characterController.stopMoving();
+            }
         }
+        
         this.renderer.render(this.scene, this.camera);
     }
 

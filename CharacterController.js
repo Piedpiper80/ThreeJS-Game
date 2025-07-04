@@ -10,6 +10,7 @@ export class CharacterController {
         this.currentAnimation = null;
         this.loader = new GLTFLoader();
         this.onLoaded = onLoaded;
+        this.speed = 5; // Units per second
         this.loadCharacter();
     }
 
@@ -52,6 +53,50 @@ export class CharacterController {
         if (this.mixer) {
             this.mixer.update(deltaTime);
         }
+    }
+
+    moveForward(deltaTime) {
+        if (!this.character) return;
+        
+        // Calculate forward direction based on character's rotation
+        const direction = new THREE.Vector3(0, 0, 1);
+        direction.applyQuaternion(this.character.quaternion);
+        
+        // Move character forward
+        this.character.position.add(direction.multiplyScalar(this.speed * deltaTime));
+        
+        // Change animation to walk if not already walking
+        if (this.currentAnimation !== 'walk' && this.animations.walk) {
+            this.setAnimation('walk');
+        }
+    }
+
+    stopMoving() {
+        if (this.currentAnimation !== 'idle') {
+            this.setAnimation('idle');
+        }
+    }
+
+    setAnimation(animationName) {
+        if (!this.animations[animationName] || this.currentAnimation === animationName) return;
+        
+        // Stop current animation
+        if (this.currentAnimation && this.animations[this.currentAnimation]) {
+            this.animations[this.currentAnimation].stop();
+        }
+        
+        // Start new animation
+        this.animations[animationName].play();
+        this.currentAnimation = animationName;
+    }
+
+    updatePosition(position) {
+        if (!this.character) return;
+        this.character.position.set(position.x, position.y, position.z);
+    }
+
+    updateAnimation(animationName) {
+        this.setAnimation(animationName);
     }
 
     getCharacter() {
