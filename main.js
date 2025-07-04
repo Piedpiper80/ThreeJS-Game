@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { PhysicsEngine } from './PhysicsEngine.js';
 
 class Game {
     constructor() {
@@ -11,6 +12,7 @@ class Game {
         this.mixer = null;
         this.animations = {};
         this.currentAnimation = null;
+        this.physicsEngine = null;
         
         // Input state
         this.keys = {};
@@ -39,6 +41,9 @@ class Game {
         this.setupScene();
         this.setupLighting();
         this.setupGround();
+        
+        // Setup physics
+        this.setupPhysics();
         
         // Load character
         this.loadCharacter();
@@ -110,20 +115,71 @@ class Game {
     addObstacles() {
         // Add some boxes as obstacles
         for (let i = 0; i < 10; i++) {
-            const geometry = new THREE.BoxGeometry(2, Math.random() * 3 + 1, 2);
+            const height = Math.random() * 3 + 1;
+            const geometry = new THREE.BoxGeometry(2, height, 2);
             const material = new THREE.MeshLambertMaterial({ 
                 color: Math.random() * 0xffffff 
             });
             const box = new THREE.Mesh(geometry, material);
             box.position.set(
                 (Math.random() - 0.5) * 80,
-                box.geometry.parameters.height / 2,
+                height / 2,
                 (Math.random() - 0.5) * 80
             );
             box.castShadow = true;
             box.receiveShadow = true;
+            box.name = `obstacle_${i}`;
+            box.userData.obstacle = true;
             this.scene.add(box);
         }
+        
+        // Add some interactable items
+        this.addInteractableItems();
+    }
+
+    addInteractableItems() {
+        // Add health potions
+        for (let i = 0; i < 5; i++) {
+            const geometry = new THREE.SphereGeometry(0.3, 8, 6);
+            const material = new THREE.MeshLambertMaterial({ 
+                color: 0xff0000,
+                emissive: 0x220000
+            });
+            const item = new THREE.Mesh(geometry, material);
+            item.position.set(
+                (Math.random() - 0.5) * 60,
+                0.5,
+                (Math.random() - 0.5) * 60
+            );
+            item.castShadow = true;
+            item.name = `item_${i}`;
+            item.userData.interactable = true;
+            item.userData.type = 'health_potion';
+            
+            // Add floating animation
+            item.userData.originalY = item.position.y;
+            item.userData.floatTime = Math.random() * Math.PI * 2;
+            
+            this.scene.add(item);
+        }
+    }
+
+    setupPhysics() {
+        // Initialize physics engine
+        this.physicsEngine = new PhysicsEngine(this.scene);
+        
+        // Enable debug mode for physics (optional)
+        // this.physicsEngine.enableDebugMode();
+        
+        // Setup event handlers
+        this.physicsEngine.onItemCollected = (item) => {
+            console.log('Item collected:', item);
+            this.showNotification(`Collected ${item.type}!`);
+        };
+        
+        this.physicsEngine.onTriggerActivated = (trigger, body) => {
+            console.log('Trigger activated:', trigger);
+        };
     }
 
     loadCharacter() {
@@ -314,6 +370,14 @@ class Game {
             this.mixer.update(deltaTime);
         }
         
+        // Update physics
+        if (this.physicsEngine) {
+            this.physicsEngine.update(deltaTime);
+        }
+        
+        // Update floating items
+        this.updateFloatingItems(deltaTime);
+        
         // Handle input and send to backend
         this.handleInput(deltaTime);
         
@@ -355,6 +419,12 @@ class Game {
         const isSprinting = this.keys['ShiftLeft'] || this.keys['ShiftRight'];
         const isCrouching = this.keys['ControlLeft'] || this.keys['ControlRight'];
         
+        // Handle jump
+        if (this.keys['Space']) {
+            this.sendJumpInput();
+            this.keys['Space'] = false; // Prevent continuous jumping
+        }
+        
         // Send flags to backend (only when they change)
         if (this.lastSprinting !== isSprinting || this.lastCrouching !== isCrouching) {
             this.sendPlayerFlags(isSprinting, isCrouching);
@@ -366,6 +436,105 @@ class Game {
     updateUI(playerState) {
         document.getElementById('current-state').textContent = playerState.animation;
         document.getElementById('current-speed').textContent = playerState.speed.toFixed(1);
+        
+        // Update physics debug info
+        if (playerState.velocity) {
+            const velocity = playerState.velocity;
+            const velocityMagnitude = Math.sqrt(velocity[0]**2 + velocity[1]**2 + velocity[2]**2);
+            
+            // Create or update physics info elements
+            let physicsInfo = document.getElementById('physics-info');
+            if (!physicsInfo) {
+                physicsInfo = document.createElement('div');
+                physicsInfo.id = 'physics-info';
+                physicsInfo.style.position = 'absolute';
+                physicsInfo.style.top = '150px';
+                physicsInfo.style.left = '10px';
+                physicsInfo.style.color = 'white';
+                physicsInfo.style.fontFamily = 'monospace';
+                physicsInfo.style.fontSize = '12px';
+                physicsInfo.style.backgroundColor = 'rgba(0,0,0,0.5)';
+                physicsInfo.style.padding = '10px';
+                physicsInfo.style.borderRadius = '5px';
+                document.body.appendChild(physicsInfo);
+            }
+            
+            physicsInfo.innerHTML = `
+                <div>Velocity: ${velocityMagnitude.toFixed(2)}</div>
+                <div>On Ground: ${playerState.on_ground}</div>
+                <div>Health: ${playerState.health}</div>
+                <div>Inventory: ${Object.keys(playerState.inventory || {}).length} items</div>
+            `;
+        }
+        
+        // Handle interactions
+        if (playerState.interactions && playerState.interactions.length > 0) {
+            playerState.interactions.forEach(interaction => {
+                if (interaction.type === 'item_collected') {
+                    this.showNotification(`Collected ${interaction.item_type}! +${interaction.value || 1}`);
+                }
+            });
+        }
+    }
+
+    async sendJumpInput() {
+        try {
+            const response = await fetch(`${this.backendUrl}/player/${this.playerId}/jump`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    jump_force: 300.0
+                })
+            });
+            
+            if (response.ok) {
+                const playerState = await response.json();
+                this.updateCharacterFromState(playerState);
+            }
+        } catch (error) {
+            console.error('Error sending jump input:', error);
+        }
+    }
+
+    updateFloatingItems(deltaTime) {
+        // Animate floating items
+        this.scene.traverse((child) => {
+            if (child.userData.interactable && child.userData.originalY !== undefined) {
+                child.userData.floatTime += deltaTime * 2;
+                child.position.y = child.userData.originalY + Math.sin(child.userData.floatTime) * 0.2;
+                child.rotation.y += deltaTime;
+            }
+        });
+    }
+
+    showNotification(message) {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.textContent = message;
+        notification.style.position = 'absolute';
+        notification.style.top = '50px';
+        notification.style.left = '50%';
+        notification.style.transform = 'translateX(-50%)';
+        notification.style.backgroundColor = 'rgba(0, 255, 0, 0.8)';
+        notification.style.color = 'white';
+        notification.style.padding = '10px 20px';
+        notification.style.borderRadius = '5px';
+        notification.style.fontFamily = 'Arial, sans-serif';
+        notification.style.fontSize = '14px';
+        notification.style.zIndex = '1000';
+        notification.style.transition = 'opacity 0.5s';
+        
+        document.body.appendChild(notification);
+        
+        // Remove notification after 3 seconds
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                document.body.removeChild(notification);
+            }, 500);
+        }, 3000);
     }
 }
 
