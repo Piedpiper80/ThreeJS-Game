@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import time
 from player_state import PlayerStateManager
+from world_state_manager import WorldStateManager, WeatherType
 
 app = FastAPI()
 
@@ -16,8 +17,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize player state manager
+# Initialize managers
 player_manager = PlayerStateManager()
+world_manager = WorldStateManager()
 
 # Create default player
 player_manager.create_player("player1")
@@ -33,6 +35,16 @@ class MouseInput(BaseModel):
 class PlayerFlags(BaseModel):
     is_sprinting: Optional[bool] = None
     is_crouching: Optional[bool] = None
+
+class WeatherUpdate(BaseModel):
+    weather_type: str
+    intensity: float = 0.5
+
+class TimeUpdate(BaseModel):
+    time_of_day: float
+
+class ObstacleSpawn(BaseModel):
+    position: Optional[List[float]] = None
 
 @app.get("/")
 def read_root():
@@ -83,4 +95,54 @@ def update_player_flags(player_id: str, flags: PlayerFlags):
     # Update animation state
     player_manager.update_animation_state(player_id)
     
-    return player_manager.get_player_data(player_id) 
+    return player_manager.get_player_data(player_id)
+
+@app.get("/world")
+def get_world_state():
+    """Get current world state"""
+    # Update world state before returning
+    world_manager.update(0.016)  # Assume ~60fps for updates
+    return world_manager.get_world_state_data()
+
+@app.post("/world/update")
+def update_world_state():
+    """Force update world state"""
+    world_manager.update(0.016)
+    return world_manager.get_world_state_data()
+
+@app.post("/world/weather")
+def set_weather(weather_update: WeatherUpdate):
+    """Set weather conditions"""
+    try:
+        weather_type = WeatherType(weather_update.weather_type)
+        world_manager.set_weather(weather_type, weather_update.intensity)
+        return world_manager.get_world_state_data()
+    except ValueError:
+        return {"error": "Invalid weather type"}
+
+@app.post("/world/time")
+def set_time_of_day(time_update: TimeUpdate):
+    """Set time of day"""
+    world_manager.set_time_of_day(time_update.time_of_day)
+    return world_manager.get_world_state_data()
+
+@app.post("/world/obstacles/spawn")
+def spawn_obstacle(obstacle_data: ObstacleSpawn):
+    """Spawn a new obstacle"""
+    position = None
+    if obstacle_data.position and len(obstacle_data.position) == 3:
+        position = (obstacle_data.position[0], obstacle_data.position[1], obstacle_data.position[2])
+    obstacle_id = world_manager.spawn_obstacle(position)
+    return {
+        "obstacle_id": obstacle_id,
+        "world_state": world_manager.get_world_state_data()
+    }
+
+@app.delete("/world/obstacles/{obstacle_id}")
+def despawn_obstacle(obstacle_id: str):
+    """Despawn an obstacle"""
+    success = world_manager.despawn_obstacle(obstacle_id)
+    return {
+        "success": success,
+        "world_state": world_manager.get_world_state_data()
+    } 
